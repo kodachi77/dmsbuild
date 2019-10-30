@@ -123,6 +123,28 @@ struct MsVer
     {
         return this.differAt(rhs);
     }
+
+    bool looseMatch(ref const MsVer rhs)
+    in
+    {
+        assert(rhs.isValid);
+        assert(this.isValid);
+    }
+    do
+    {
+        foreach (i; VersionPart.Major .. VersionPart.Revision)
+        {
+            if (rhs.ids[i] && ids[i] != rhs.ids[i])
+                return false;
+        }
+
+        return true;
+    }
+
+    bool looseMatch(in MsVer rhs)
+    {
+        return this.looseMatch(rhs);
+    }
 }
 
 unittest
@@ -137,4 +159,10 @@ unittest
     assert(MsVer("1.0.2.12") > MsVer("1.0.1.24"));
 
     assert(MsVer("1.0.0.12").toString() == "1.0.0.12");
+
+    assert(MsVer("1.23.0.12").looseMatch(MsVer("1")));
+    assert(MsVer("1.23.0.12").looseMatch(MsVer("1.23")));
+    assert(MsVer("1.23.0.12").looseMatch(MsVer("1.23.0")));
+    assert(MsVer("1.23.0.12").looseMatch(MsVer("1.23.0.12")));
+    assert(MsVer("1.23.0.12").looseMatch(MsVer("1.23.0.0")));
 }

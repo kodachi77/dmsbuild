@@ -71,6 +71,8 @@ struct Option
     // VS-specific options; extracted from .sln file
     uint minVsVersion = 0;
     uint maxVsVersion = 0;
+
+    MsVer forceVsVersion;
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -276,6 +278,32 @@ string batOrExe(string filename)
 
 //----------------------------------------------------------------------------------------------------------------------
 
+bool checkVsVersion(MsVer ver)
+{
+    bool ret;
+    if (g_option.forceVsVersion.valid && ver.valid)
+    {
+        ret = ver.looseMatch(g_option.forceVsVersion);
+        if (!ret)
+        {
+            dbgprint("Force argument has been specified. Check of %s version failed against --force %s", ver,
+                    g_option.forceVsVersion);
+        }
+        return ret;
+    }
+
+    immutable bool skipCheck = !g_option.minVsVersion && !g_option.maxVsVersion;
+    immutable uint majorVer = skipCheck ? 0 : ver.part(VersionPart.Major);
+    ret = (majorVer >= g_option.minVsVersion && majorVer <= g_option.maxVsVersion);
+    if (!ret)
+    {
+        dbgprint("checking against %u version failed. Permitted range is: (%u, %u)", majorVer,
+                g_option.minVsVersion, g_option.maxVsVersion);
+    }
+    return ret;
+}
+//----------------------------------------------------------------------------------------------------------------------
+
 string findVswhere()
 {
     foreach (string envVar; ["ProgramFiles(x86)", "ProgramFiles"])
@@ -298,8 +326,8 @@ bool findVsMsbuild(VsInstance vsver, ref string msb)
 {
     bool ret = false;
 
-    immutable auto majorVersion = vsver.ver.part(VersionPart.Major);
-    auto vsverStr = format("%u.0", majorVersion);
+    immutable uint majorVersion = vsver.ver.part(VersionPart.Major);
+    string vsverStr = format("%u.0", majorVersion);
 
     if (majorVersion >= 16)
         vsverStr = "Current";
@@ -312,15 +340,9 @@ bool findVsMsbuild(VsInstance vsver, ref string msb)
 
     msb = (bWin64Host && !g_option.noamd64) ? check("%s\\MSBuild\\%s\\Bin\\amd64\\MSBuild.exe") : check(
             "%s\\MSBuild\\%s\\Bin\\MSBuild.exe");
-    if (msb)
-    {
-        immutable bool skipCheck = !g_option.minVsVersion && !g_option.maxVsVersion;
-        immutable uint majorVer = skipCheck ? 0 : majorVersion;
-        if (majorVer >= g_option.minVsVersion && majorVer <= g_option.maxVsVersion)
-        {
-            ret = g_msbuild.insertBack(msb) > 0;
-        }
-    }
+
+    if (msb && checkVsVersion(vsver.ver))
+        ret = g_msbuild.insertBack(msb) > 0;
 
     return g_option.listall ? false : ret;
 }
@@ -357,7 +379,7 @@ string msbToolsPathFromRegistry(string ver)
 
 //----------------------------------------------------------------------------------------------------------------------
 
-bool findMsBuildFromRegistry(string ver)
+bool findMsBuildFromRegistry(string ver, bool check)
 in
 {
     assert(ver.length);
@@ -372,7 +394,11 @@ do
         path = stripRight(path, "\\");
         auto msb = format("%s\\MSBuild.exe", path);
         if (exists(msb))
-            ret = g_msbuild.insertBack(msb) > 0;
+        {
+            immutable bool addMsb = check ? checkVsVersion(MsVer(ver)) : true;
+            if (addMsb)
+                ret = g_msbuild.insertBack(msb) > 0;
+        }
     }
     return g_option.listall ? false : ret;
 }
@@ -477,7 +503,7 @@ bool msbFromVswhere()
                 dbgprint("    %s", sortableVersion[i].toString());
                 string msb;
                 ret = findVsMsbuild(sortableVersion[i], msb);
-                if (msb)
+                if (ret && msb)
                     cache.put(hash, CacheEntry(msb, sortableVersion[i], g_option.noamd64));
 
                 if (ret)
@@ -500,7 +526,7 @@ bool msbFromOldVS()
     dbgprint("Searching in older Visual Studio - 2015, 2013...");
     foreach (string ver; ["14.0", "12.0"])
     {
-        ret = findMsBuildFromRegistry(ver);
+        ret = findMsBuildFromRegistry(ver, true);
         if (ret)
             break;
     }
@@ -519,7 +545,7 @@ bool msbFromNetFramework()
     dbgprint("Searching in .NET Framework - .NET 4.0, 3.5, 2.0...");
     foreach (string ver; ["4.0", "3.5", "2.0"])
     {
-        ret = findMsBuildFromRegistry(ver);
+        ret = findMsBuildFromRegistry(ver, false);
         if (ret)
             break;
     }
@@ -618,6 +644,7 @@ else
 
         GetoptResult help;
         string[] vswRequire;
+        string vsversion;
         try
         {
             arraySep = ",";
@@ -634,7 +661,7 @@ else
                 "reset-cache", &g_option.resetcache,
                 "no-amd64", &g_option.noamd64,
                 "prerelease", &g_option.prerelease,
-//>                "force", &g_option.vsversion,
+                "force", &vsversion,
                 "print-path", &printPath,
                 "debug", &g_option.dbg,
                 "version", &showVersion);
@@ -665,8 +692,10 @@ else
                 " --reset-cache       - Reset all cached vswhere versions before processing.\n" ~
                 " --no-amd64          - Use 32-bit version of msbuild.exe.\n" ~
                 " --prerelease        - Include possible beta releases.\n" ~
-                //>" --force {version}   - Force certain Visual Studio version. 'latest' is used by default.\n" ~
-                //>"                       You can also use partial versions like 15 or 16.2\n" ~
+                " --force {version}   - Force certain Visual Studio version. Latest is used by default.\n" ~
+                "                       You can use partial versions like 15 or 16.2. Please note that this\n" ~
+                "                       argument only applies to VS instances found by vswhere or through\n" ~
+                "                       registry.\n" ~
                 " --print-path        - Display full path to msbuild.exe and exit.\n" ~
                 " --debug             - Show dmsbuild diagnostic information.\n" ~
                 " --version           - Display version of dmsbuild.\n" ~
@@ -678,7 +707,7 @@ else
                 "--------\n" ~
                 "dmsbuild --no-amd64 \"UE4.sln\" /t:rebuild /p:configuration=\"Development Editor\"\n" ~
                 "\n" ~
-                //>"dmsbuild --force 15.9.21.664 \"UE4.sln\"\n" ~
+                "dmsbuild --force 15.9.28307.905 \"UE4.sln\"\n" ~
                 "dmsbuild --no-netfx --no-vs --no-amd64 \"UE4.sln\"\n" ~
                 "dmsbuild --no-vs \"UE4.sln\"\n" ~
                 "\n" ~
@@ -697,7 +726,15 @@ else
         }
 
         g_option.vswfilter = vswRequire.length ? vswRequire.join(" ") : "";
-
+        if (vsversion)
+        {
+            g_option.forceVsVersion = MsVer(vsversion);
+            if(g_option.forceVsVersion.valid && !g_option.nonetfx)
+            {
+                stdout.writeln("--force option has been specified. Disabling search in .NET Frameworks.");
+                g_option.nonetfx = true;
+            }
+        }
         processRemainingArgs(args);
 
         if (g_option.listall)
@@ -713,6 +750,7 @@ else
 
             g_option.minVsVersion = 0;
             g_option.maxVsVersion = 0;
+            g_option.forceVsVersion = MsVer("");
         }
 
         bool ret = msbFromVswhere() || msbFromOldVS() || msbFromNetFramework();

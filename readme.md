@@ -1,6 +1,6 @@
 # dmsbuild
 
-This is a toy program that helps locating msbuild executable in various windows environments.
+Small program that helps locating msbuild executable in various Windows environments.
 
 ## Overview
 
@@ -18,35 +18,42 @@ msbuild on your computer.
 ## Usage
 
 ```sh
-Usage: dmsuild [dmsbuild args] [msbuild.exe args]
-----------
+Usage: dmsuild [dmsbuild args] [msbuild.exe args]                                                        
+----------                                                                                               
 Arguments:
-----------
- --no-vs             - Disable searching in Visual Studio folder.
- --no-netfx          - Disable searching in .NET Framework folder.
+----------                                                                                               
+ --no-vs             - Disable searching for older Visual Studio (2013, 2015).
+ --no-netfx          - Disable searching in .NET Framework folders.
  --no-vswhere        - Do not search via vswhere.
-
+                                                                                                         
  --vsw-require {IDs} - Non-strict components preference: https://aka.ms/vs/workloads
                        Comma-separated list.
-
+                                                                                                         
  --all               - Collects info about all msbuild versions.
  --no-cache          - Do not cache vswhere for this request.
  --reset-cache       - Reset all cached vswhere versions before processing.
  --no-amd64          - Use 32-bit version of msbuild.exe.
  --prerelease        - Include possible beta releases.
+ --force {version}   - Force certain Visual Studio version. Latest is used by default.
+                       You can use partial versions like 15 or 16.2. Please note that this 
+                       argument only applies to VS instances found by vswhere or through 
+                       registry.
  --print-path        - Display full path to msbuild.exe and exit.
  --debug             - Show dmsbuild diagnostic information.
  --version           - Display version of dmsbuild.
  --help              - Display this help.
-
-
---------
-Samples:
---------
+                                                                                                         
+                                                                                                         
+--------                                                                                                 
+Examples:
+--------                                                                                                 
 dmsbuild --no-amd64 "UE4.sln" /t:rebuild /p:configuration="Development Editor"
-
-dmsbuild --no-vswhere --no-vs --no-amd64 "UE4.sln"
+                                                                                                         
+dmsbuild --force 15.9.28307.905 "UE4.sln"
+dmsbuild --no-netfx --no-vs --no-amd64 "UE4.sln"
 dmsbuild --no-vs "UE4.sln"
+                                                                                                         
+dmsbuild --all
 ```
 
 ## Building
