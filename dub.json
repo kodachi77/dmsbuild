@@ -1,0 +1,24 @@
+{
+    "authors": [
+        "kodachi79"
+    ],
+    "copyright": "Copyright (c) 2019 kodachi79",
+    "description": "Tool to locate msbuild.exe in various Windows environments.",
+    "license": "MIT",
+    "name": "dmsbuild",
+    "targetType": "executable",
+    "mainSourceFile": "source/main.d",
+
+    "configurations": [
+        {
+            "name": "dmsbuild",
+            "platforms": [ "windows-x86" ],
+            "targetName": "dmsbuild"
+        },
+        {
+            "name": "dmsbuild64",
+            "platforms": [ "windows-x86_64" ],
+            "targetName": "dmsbuild64"
+        }
+    ]
+}
