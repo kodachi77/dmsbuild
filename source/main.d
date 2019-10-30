@@ -95,9 +95,15 @@ struct VsInstance
     this(string p, string e, string v)
     {
         path = p;
-
-        edition = cast(VsEdition) e.toLower().among("microsoft.visualstudio.product.community",
-                "microsoft.visualstudio.product.professional", "microsoft.visualstudio.product.enterprise");
+        try
+        {
+            edition = to!VsEdition(e);
+        }
+        catch (ConvException ex)
+        {
+            edition = cast(VsEdition) e.toLower().among("microsoft.visualstudio.product.community",
+                    "microsoft.visualstudio.product.professional", "microsoft.visualstudio.product.enterprise");
+        }
 
         ver = MsVer(v);
     }
@@ -121,20 +127,20 @@ struct VsInstance
 struct CacheEntry
 {
     string msbPath;
-    VsInstance vsVersion;
+    VsInstance vsInstance;
     bool isWin64 = false;
 
     this(string p, VsInstance v, bool x)
     {
         msbPath = p;
-        vsVersion = v;
+        vsInstance = v;
         isWin64 = x;
     }
 
-    this(string p, string v, string e, int x64) //>
+    this(string p, string e, string v, int x64)
     {
         msbPath = p;
-        vsVersion = VsInstance("", v, e);
+        vsInstance = VsInstance("", e, v);
         isWin64 = x64 > 0;
     }
 }
@@ -220,7 +226,7 @@ class Cache
     {
         auto file = File(_filename, "w");
         foreach (Key k, CacheEntry v; _cache)
-            file.writeln(format("%u=%s,%s,%s,%d", k, v.msbPath, v.vsVersion.ver, v.vsVersion.edition, v.isWin64)); //>
+            file.writeln(format("%u=%s,%s,%s,%d", k, v.msbPath, v.vsInstance.edition, v.vsInstance.ver, v.isWin64)); //>
 
         file.flush();
         scope (exit)
@@ -286,14 +292,14 @@ bool checkVsVersion(MsVer ver)
         ret = ver.looseMatch(g_option.forceVsVersion);
         if (!ret)
         {
-            dbgprint("Force argument has been specified. Check of %s version failed against --force %s", ver,
-                    g_option.forceVsVersion);
+            dbgprint("Force argument has been specified. Check of %s version failed against --force %s",
+                    ver, g_option.forceVsVersion);
         }
         return ret;
     }
 
-    immutable bool skipCheck = !g_option.minVsVersion && !g_option.maxVsVersion;
-    immutable uint majorVer = skipCheck ? 0 : ver.part(VersionPart.Major);
+    immutable bool skipCheck = !ver.valid || (!g_option.minVsVersion && !g_option.maxVsVersion);
+    immutable uint majorVer = skipCheck ? g_option.minVsVersion : ver.part(VersionPart.Major);
     ret = (majorVer >= g_option.minVsVersion && majorVer <= g_option.maxVsVersion);
     if (!ret)
     {
@@ -463,8 +469,13 @@ bool msbFromVswhere()
     auto hash = getHashString(g_option.vswfilter, g_option.prerelease);
     if (hash in cache)
     {
-        string msb = cache.get(hash).msbPath;
-        return g_msbuild.insertBack(msb) > 0;
+        auto ce = cache.get(hash);
+        dbgprint("cache entry has been found in cache...");
+        if (checkVsVersion(ce.vsInstance.ver))
+        {
+            string msb = ce.msbPath;
+            return g_msbuild.insertBack(msb) > 0;
+        }
     }
     auto vswhere = findVswhere();
     if (vswhere)
@@ -729,7 +740,7 @@ else
         if (vsversion)
         {
             g_option.forceVsVersion = MsVer(vsversion);
-            if(g_option.forceVsVersion.valid && !g_option.nonetfx)
+            if (g_option.forceVsVersion.valid && !g_option.nonetfx)
             {
                 stdout.writeln("--force option has been specified. Disabling search in .NET Frameworks.");
                 g_option.nonetfx = true;
